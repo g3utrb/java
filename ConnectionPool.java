@@ -148,7 +148,7 @@ public class ConnectionPool {
      * @params  connection type
      * @returns acquired connection
      */
-    public Connection acquire(ConnectionType type) {
+    public Connection acquire(ConnectionType type) throws Exception {
       if (type == ConnectionType.Read) {
         return acquireFrom(readPool);
       }
@@ -168,15 +168,16 @@ public class ConnectionPool {
      *
      * @params  pool being acquired from
      */
-    private Connection acquireFrom(LockedPool pool) {
+    private Connection acquireFrom(LockedPool pool) throws Exception {
         try {
             synchronized (pool.lock) {
                 return lockedAcquire(pool);
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            String s = "Failed to acquire connection from pool: " + pool;
+            Utilities.logException(e, s);
+            throw e;
         }
-        return null;
     }
 
     /**
@@ -191,7 +192,7 @@ public class ConnectionPool {
      *
      * @params  pool being acquired from
      */
-    private Connection lockedAcquire(LockedPool pool) {
+    private Connection lockedAcquire(LockedPool pool) throws InterruptedException {
         logger.info("Acquiring from -> " + pool);
 
         /// there is an available connection, use it
@@ -207,7 +208,7 @@ public class ConnectionPool {
             pool.inUse.offer(conn);
             return conn;
         }
-        /// the pool usage is full, wait for an available connection
+        /// the connection pool is empty, wait for an available connection
         else {
             while (pool.available.isEmpty()) {
                 try {
@@ -215,7 +216,9 @@ public class ConnectionPool {
                     pool.lock.wait();
                 }
                 catch (InterruptedException e) {
-                    e.printStackTrace();
+                    String s = "Interrupted waiting on pool: " + pool;
+                    Utilities.logException(e, s);
+                    throw e;
                 }
             }
             Connection conn = pool.available.poll();
@@ -240,6 +243,53 @@ public class ConnectionPool {
         }
         else if (conn.props.type == ConnectionType.Bulk) {
             releaseTo(conn, bulkPool);
+        }
+    }
+
+    /**
+     * Dispose and Acquire
+     *
+     * Dispose the supplied connection and acquire a new one.
+     *
+     * @params  connection being disposed of
+     */
+    public Connection disposeAcquire(Connection conn) {
+        if (conn.props.type == ConnectionType.Read) {
+            return lockedDisposeAcquire(conn, readPool);
+        }
+        else if (conn.props.type == ConnectionType.Write) {
+            return lockedDisposeAcquire(conn, writePool);
+        }
+        else {
+            return lockedDisposeAcquire(conn, bulkPool);
+        }
+    }
+
+    /**
+     * Locked Dispose and Acquire
+     *
+     * - Locks the supplied pool.
+     * - Disposes the passed connection.
+     * - Removes it from the inUse pool.
+     * - Creates and initializes a new connection.
+     * - Adds it to the inUse pool.
+     *
+     * @params   connection being disposed of
+     * @params   relevant pool
+     * @returns  new connection [on failure the original one]
+     */
+    public Connection lockedDisposeAcquire(Connection conn, LockedPool pool) {
+        Connection incarnated = conn;
+        synchronized (pool.lock) {
+            try {
+                conn.dispose();
+                pool.inUse.remove(conn);
+                incarnated = lockedAcquire(pool);
+                incarnated.timestamp = conn.timestamp;
+            }
+            catch (Exception ex) {
+            }
+            return incarnated;
         }
     }
 
@@ -300,7 +350,7 @@ public class ConnectionPool {
             }
             /// how is the count of over minimum size - if it has exceeded
             /// the threshold then we have to start evicting
-            if (pool.overMinimumCount >= overMinimumThreshold) {
+            else if (pool.overMinimumCount >= overMinimumThreshold) {
             
                 /// iterate over the available pool and evict while the pool
                 /// size is greater then the minimum

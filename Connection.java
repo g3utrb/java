@@ -72,6 +72,7 @@ public class Connection implements Comparable<Connection> {
      * - Deflate message into an output stream.
      *   [could this be an infinite loop].
      * - And serialize the output stream into a bytes message.
+     * - Logs elapsed time for the compression process.
      *
      * @params  message to compress
      * @returns compressed bytes message
@@ -79,6 +80,10 @@ public class Connection implements Comparable<Connection> {
     private BytesMessage compress(String message) {
 
         /// establish the deflater
+        String originalSize = Integer.toString(message.length());
+        String s = "Compress. Message size: " + originalSize;
+        TimeTracker tracker = new TimeTracker();
+        tracker.start(s);
         BytesMessage bytes = session.createBytesMessage();
         byte[] compressed = new byte[50000];
         Deflater deflater = new Deflater();
@@ -88,16 +93,17 @@ public class Connection implements Comparable<Connection> {
         /// begin the deflation sequence into an output stream
         int count = 0;
         ByteArrayOutputStream stream = new ByteArrayOutputStream();
-        logger.info("Compression sequence starting");
         while (! deflater.finished()) {
             count = deflater.deflate(compressed);
             stream.write(compressed, 0, count);
         }
         deflater.end();
-        logger.info("Compression sequence ended");
+        String compressedSize = Integer.toString(compressed.length);
 
         /// serialize stream into the bytes message
         bytes.writeBytes(stream.toByteArray());
+        s = "Compress. Compressed size: " + compressedSize;
+        tracker.mark(s);
         return bytes;
     }
 

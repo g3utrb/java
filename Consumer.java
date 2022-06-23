@@ -21,6 +21,8 @@ public class Consumer {
                 Connection conn = null;
                 try {
                     conn = pool.acquire(ConnectionType.Read);
+                    Dispatcher.Result res = Dispatcher.dispatch("foo", conn, true);
+                    conn = res.conn;
                     Thread.sleep(2000);
                 }
                 catch (Exception ex) {

@@ -271,7 +271,7 @@ public class ConnectionPool {
      * - Locks the supplied pool.
      * - Disposes the passed connection.
      * - Removes it from the inUse pool.
-     * - Creates and initializes a new connection.
+     * - Acquires a new connection.
      * - Adds it to the inUse pool.
      *
      * @params   connection being disposed of
